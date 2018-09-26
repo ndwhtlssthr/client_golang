@@ -27,6 +27,14 @@
 //        BasicAuth("top", "secret").
 //        Add()
 //
+//	  // With Custom Headers:
+//    authHeaderVal := fmt.Sprintf("Bearer %s", token)
+//	  push.New("http://example.org/metrics", "my_job").
+//		  Gatherer(myRegistry).
+//		  AddHeader("Authorization", authHeaderVal).
+//		  AddHeader("Something-Else", "some custom val").
+//		  Push()
+//
 // See the examples section for more detailed examples.
 //
 // See the documentation of the Pushgateway to understand the meaning of
@@ -64,6 +72,7 @@ type Pusher struct {
 	client             *http.Client
 	useBasicAuth       bool
 	username, password string
+	customHeaders      map[string]string
 }
 
 // New creates a new Pusher to push to the provided URL with the provided job
@@ -89,13 +98,14 @@ func New(url, job string) *Pusher {
 	}
 
 	return &Pusher{
-		error:      err,
-		url:        url,
-		job:        job,
-		grouping:   map[string]string{},
-		gatherers:  prometheus.Gatherers{reg},
-		registerer: reg,
-		client:     &http.Client{},
+		error:         err,
+		url:           url,
+		job:           job,
+		grouping:      map[string]string{},
+		gatherers:     prometheus.Gatherers{reg},
+		registerer:    reg,
+		client:        &http.Client{},
+		customHeaders: make(map[string]string),
 	}
 }
 
@@ -182,6 +192,13 @@ func (p *Pusher) BasicAuth(username, password string) *Pusher {
 	return p
 }
 
+// AddHeader configures the Pusher to all headers specified to outgoing requests.
+// For convenience, this method returns a pointer to the Pusher itself.
+func (p *Pusher) AddHeader(key, val string) *Pusher {
+	p.customHeaders[key] = val
+	return p
+}
+
 func (p *Pusher) push(method string) error {
 	if p.error != nil {
 		return p.error
@@ -223,6 +240,12 @@ func (p *Pusher) push(method string) error {
 		req.SetBasicAuth(p.username, p.password)
 	}
 	req.Header.Set(contentTypeHeader, string(expfmt.FmtProtoDelim))
+	for k, v := range p.customHeaders {
+		if k == contentTypeHeader {
+			continue
+		}
+		req.Header.Set(k, v)
+	}
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return err
